@@ -95,7 +95,6 @@ for obj in objects:
         continue
     key = obj['CKA_LABEL']
     trustmap[key] = obj
-    print(" added trust", key)
 
 # Build up cert database.
 certmap = dict()
@@ -104,7 +103,6 @@ for obj in objects:
         continue
     key = obj['CKA_LABEL']
     certmap[key] = obj
-    print(" added cert", key)
 
 def obj_to_filename(obj):
     label = obj['CKA_LABEL'][1:-1]
