@@ -25,6 +25,7 @@ import base64
 import os
 import re
 import sys
+import tempfile
 import textwrap
 import urllib.request, urllib.parse, urllib.error
 import subprocess
@@ -39,6 +40,7 @@ JAVA_HOME = os.getenv('JAVA_HOME')
 if JAVA_HOME is None:
   JAVA_HOME = "/usr"
 CERTDATA = "certdata.txt"
+TMPDIR = tempfile.mkdtemp()
 PKIDIR = DESTDIR + "/etc/pki"
 SSLDIR = DESTDIR + "/etc/ssl"
 # Do not depend on path, provide them in the config file if not correct
@@ -67,7 +69,16 @@ SRCURL = "https://" + SRCHOST + "/releases/mozilla-release/raw-file/default/secu
 SRCDAT = SRCURL.replace("raw-file", "log")
 PROXY = ''
 
+print("Temp Directory is: %s" % (TMPDIR))
+
 # Open the configuration file to override the above, but for now just leave it.
+
+
+# Make sure destination directories exist
+os.makedirs(ANCHORDIR, mode = 0o755, exist_ok = True)
+os.makedirs(BUNDLEDIR, mode = 0o755, exist_ok = True)
+os.makedirs(CERTDIR, mode = 0o755, exist_ok = True)
+os.makedirs(KEYSTORE, mode = 0o755, exist_ok = True)
 
 def printable_serial(obj):
   return ".".join([str(x) for x in obj['CKA_SERIAL_NUMBER']])
@@ -285,7 +296,7 @@ for tobj in objects:
             f.close()
 
             if 'CKA_TRUST_SERVER_AUTH' in tobj or 'CKA_TRUST_EMAIL_PROTECTION' in tobj or 'CKA_TRUST_CODE_SIGNING' in tobj:
-                legacy_fname = "legacy-disable/" + fname + ".crt"
+                legacy_fname = TMPDIR + "/" + "legacy-disable/" + fname + ".crt"
                 f = open(legacy_fname, 'w')
                 f.write("# alias=%s\n"%tobj['CKA_LABEL'])
                 f.write("# trust=" + " ".join(trustbits) + "\n")
@@ -303,7 +314,7 @@ for tobj in objects:
         cert_comment = ''
         if obj != None:
             # must extract the public key from the cert, let's use openssl
-            cert_fname = "cert-" + fname
+            cert_fname = TMPDIR + "/" + "cert-" + fname
             fc = open(cert_fname, 'w')
             fc.write("-----BEGIN CERTIFICATE-----\n")
             temp_encoded_b64 = base64.b64encode(obj['CKA_VALUE'])
@@ -311,7 +322,7 @@ for tobj in objects:
             fc.write("\n".join(temp_wrapped))
             fc.write("\n-----END CERTIFICATE-----\n")
             fc.close();
-            pk_fname = "pubkey-" + fname
+            pk_fname = TMPDIR + "/" + "pubkey-" + fname
             fpkout = open(pk_fname, "w")
             dump_pk_command = ["openssl", "x509", "-in", cert_fname, "-noout", "-pubkey"]
             subprocess.call(dump_pk_command, stdout=fpkout)
@@ -319,7 +330,7 @@ for tobj in objects:
             with open (pk_fname, "r") as myfile:
                 pk=myfile.read()
             # obtain certificate information suitable as a comment
-            comment_fname = "comment-" + fname
+            comment_fname = TMPDIR + "/" + "comment-" + fname
             fcout = open(comment_fname, "w")
             comment_command = ["openssl", "x509", "-in", cert_fname, "-noout", "-text"]
             subprocess.call(comment_command, stdout=fcout)
@@ -456,7 +467,7 @@ for tobj in objects:
         os.remove(pk_fname)
         fhash_command = ["openssl", "x509", "-in", fname, "-hash", "--nocert"]
         fhash = subprocess.run(fhash_command, stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
-        nfname = fhash
+        nfname = ANCHORDIR + "/" + fhash
         nfname += ".p11-kit"
         os.rename(fname,nfname)
         print("Keyhash:      %s" % (fhash))
