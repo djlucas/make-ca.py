@@ -185,7 +185,7 @@ cert_distrust_types = {
 for tobj in objects:
     if tobj['CKA_CLASS'] == 'CKO_NSS_TRUST':
         key = tobj['CKA_LABEL']
-        print("producing trust for " + key)
+        print("Certificate:  " + key.replace('"', ''))
         trustbits = []
         distrustbits = []
         openssl_trustflags = []
@@ -382,8 +382,14 @@ for tobj in objects:
               f.write("x-distrusted: true\n")
             f.write("\n\n")
         f.close()
-        nfname_command = ["openssl", "x509", "-in", fname, "-hash", "--nocert"]
-        nfname = subprocess.run(nfname_command, stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
+        fhash_command = ["openssl", "x509", "-in", fname, "-hash", "--nocert"]
+        fhash = subprocess.run(fhash_command, stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
+        nfname = fhash
         nfname += ".p11-kit"
         os.rename(fname,nfname)
-        print(" -> written as %s, trust = %s, openssl-trust = %s, distrust = %s, openssl-distrust = %s" % (nfname, trustbits, openssl_trustflags, distrustbits, openssl_distrustflags))
+        print("Keyhash:      %s" % (fhash))
+        t   = ', '.join(trustbits)
+        ot  = ', '.join(openssl_trustflags)
+        dt  = ', '.join(distrustbits)
+        odt = ', '.join(openssl_distrustflags)
+        print("Added to p11-kit anchor directory with the following trust bits:\n  Mozilla Trust:     %s\n  OpenSSL Trust:     %s\n  Mozilla Distrust:  %s\n  OpenSSL Distrust:  %s\n\n" % (t, ot, dt, odt))
