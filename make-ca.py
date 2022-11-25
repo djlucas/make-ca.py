@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # vim:set et sw=4:
 #
 # certdata2pem.py - splits certdata.txt into multiple files
@@ -22,7 +22,7 @@
 # USA.
 
 import base64
-import os.path
+import os
 import re
 import sys
 import textwrap
@@ -31,13 +31,51 @@ import subprocess
 
 objects = []
 
+# Define default values
+DESTDIR = os.getenv('DESTDIR')
+if DESTDIR is None:
+  DESTDIR = ''
+JAVA_HOME = os.getenv('JAVA_HOME')
+if JAVA_HOME is None:
+  JAVA_HOME = "/usr"
+CERTDATA = "certdata.txt"
+PKIDIR = DESTDIR + "/etc/pki"
+SSLDIR = DESTDIR + "/etc/ssl"
+# Do not depend on path, provide them in the config file if not correct
+CERTUTIL = "/usr/bin/certutil"
+CUT = "/usr/bin/cut"
+GREP = "/usr/bin/grep"
+HEAD = "/usr/bin/head"
+KEYTOOL = JAVA_HOME + "/bin/keytool"
+MD5SUM = "/usr/bin/md5sum"
+OPENSSL = "/usr/bin/openssl"
+SED = "/usr/bin/sed"
+TRUST = "/usr/bin/trust"
+ANCHORDIR = PKIDIR + "/anchors"
+ANCHORLIST = PKIDIR + "/anchors.md5sums"
+BUNDLEDIR = PKIDIR + "/tls/certs"
+CABUNDLE = BUNDLEDIR + "/ca-bundle.crt"
+SMBUNDLE = BUNDLEDIR + "/email-ca-bundle.crt"
+CSBUNDLE = BUNDLEDIR + "/objsign-ca-bundle.crt"
+CERTDIR = SSLDIR + "/certs"
+KEYSTORE = PKIDIR + "/tls/java"
+NSSDB = PKIDIR + "/nssdb"
+LOCALDIR = SSLDIR + "/local"
+CURCERTDATA = "/etc/ssl/" + CERTDATA
+SRCHOST = "hg.mozilla.org"
+SRCURL = "https://" + SRCHOST + "/releases/mozilla-release/raw-file/default/security/nss/lib/ckfw/builtins/certdata.txt"
+SRCDAT = SRCURL.replace("raw-file", "log")
+PROXY = ''
+
+# Open the configuration file to override the above, but for now just leave it.
+
 def printable_serial(obj):
   return ".".join([str(x) for x in obj['CKA_SERIAL_NUMBER']])
 
 # Dirty file parser.
 in_data, in_multiline, in_obj = False, False, False
 field, ftype, value, binval, obj = None, None, None, bytearray(), dict()
-for line in open('certdata.txt', 'r'):
+for line in open(CURCERTDATA, 'r'):
     # Ignore the file header.
     if not in_data:
         if line.startswith('BEGINDATA'):
