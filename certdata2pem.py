@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # vim:set et sw=4:
 #
 # certdata2pem.py - splits certdata.txt into multiple files
@@ -93,7 +93,7 @@ trustmap = dict()
 for obj in objects:
     if obj['CKA_CLASS'] != 'CKO_NSS_TRUST':
         continue
-    key = obj['CKA_LABEL'] + printable_serial(obj)
+    key = obj['CKA_LABEL']
     trustmap[key] = obj
     print(" added trust", key)
 
@@ -102,7 +102,7 @@ certmap = dict()
 for obj in objects:
     if obj['CKA_CLASS'] != 'CKO_CERTIFICATE':
         continue
-    key = obj['CKA_LABEL'] + printable_serial(obj)
+    key = obj['CKA_LABEL']
     certmap[key] = obj
     print(" added cert", key)
 
@@ -184,7 +184,7 @@ cert_distrust_types = {
 
 for tobj in objects:
     if tobj['CKA_CLASS'] == 'CKO_NSS_TRUST':
-        key = tobj['CKA_LABEL'] + printable_serial(tobj)
+        key = tobj['CKA_LABEL']
         print("producing trust for " + key)
         trustbits = []
         distrustbits = []
@@ -260,34 +260,6 @@ for tobj in objects:
 
         pk = ''
         cert_comment = ''
-        if obj != None:
-            # must extract the public key from the cert, let's use openssl
-            cert_fname = "cert-" + fname
-            fc = open(cert_fname, 'w')
-            fc.write("-----BEGIN CERTIFICATE-----\n")
-            temp_encoded_b64 = base64.b64encode(obj['CKA_VALUE'])
-            temp_wrapped = textwrap.wrap(temp_encoded_b64.decode(), 64)
-            fc.write("\n".join(temp_wrapped))
-            fc.write("\n-----END CERTIFICATE-----\n")
-            fc.close();
-            pk_fname = "pubkey-" + fname
-            fpkout = open(pk_fname, "w")
-            dump_pk_command = ["openssl", "x509", "-in", cert_fname, "-noout", "-pubkey"]
-            subprocess.call(dump_pk_command, stdout=fpkout)
-            fpkout.close()
-            with open (pk_fname, "r") as myfile:
-                pk=myfile.read()
-            # obtain certificate information suitable as a comment
-            comment_fname = "comment-" + fname
-            fcout = open(comment_fname, "w")
-            comment_command = ["openssl", "x509", "-in", cert_fname, "-noout", "-text"]
-            subprocess.call(comment_command, stdout=fcout)
-            fcout.close()
-            sed_command = ["sed", "--in-place", "s/^/#/", comment_fname]
-            subprocess.call(sed_command)
-            with open (comment_fname, "r", errors = 'replace') as myfile:
-                cert_comment=myfile.read()
-
         fname += ".tmp-p11-kit"
         f = open(fname, 'w')
 
@@ -318,6 +290,7 @@ for tobj in objects:
             if is_distrusted:
                 trust_ext_oid = "1.3.6.1.4.1.3319.6.10.1"
                 trust_ext_value = "0.%06%0a%2b%06%01%04%01%99w%06%0a%01%04 0%1e%06%08%2b%06%01%05%05%07%03%04%06%08%2b%06%01%05%05%07%03%01%06%08%2b%06%01%05%05%07%03%03"
+                A
                 write_cert_ext_to_file(f, trust_ext_oid, trust_ext_value, pk)
 
             trust_ext_oid = "2.5.29.37"
@@ -410,4 +383,8 @@ for tobj in objects:
               f.write("x-distrusted: true\n")
             f.write("\n\n")
         f.close()
-        print(" -> written as '%s', trust = %s, openssl-trust = %s, distrust = %s, openssl-distrust = %s" % (fname, trustbits, openssl_trustflags, distrustbits, openssl_distrustflags))
+        nfname_command = ["openssl", "x509", "-in", fname, "-hash", "--nocert"]
+        nfname = subprocess.run(nfname_command, stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
+        nfname += ".p11-kit"
+        os.rename(fname,nfname)
+        print(" -> written as %s, trust = %s, openssl-trust = %s, distrust = %s, openssl-distrust = %s" % (nfname, trustbits, openssl_trustflags, distrustbits, openssl_distrustflags))
