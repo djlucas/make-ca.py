@@ -290,7 +290,6 @@ for tobj in objects:
             if is_distrusted:
                 trust_ext_oid = "1.3.6.1.4.1.3319.6.10.1"
                 trust_ext_value = "0.%06%0a%2b%06%01%04%01%99w%06%0a%01%04 0%1e%06%08%2b%06%01%05%05%07%03%04%06%08%2b%06%01%05%05%07%03%01%06%08%2b%06%01%05%05%07%03%03"
-                A
                 write_cert_ext_to_file(f, trust_ext_oid, trust_ext_value, pk)
 
             trust_ext_oid = "2.5.29.37"
