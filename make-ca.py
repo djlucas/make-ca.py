@@ -49,6 +49,7 @@ CERTUTIL = "/usr/bin/certutil"
 KEYTOOL = JAVA_HOME + "/bin/keytool"
 MD5SUM = "/usr/bin/md5sum"
 OPENSSL = "/usr/bin/openssl"
+SED = "/usr/bin/sed"
 TRUST = "/usr/bin/trust"
 
 # Destination configuration
