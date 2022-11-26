@@ -46,13 +46,9 @@ CERTDATA = "certdata.txt"
 
 # Do not depend on path, provide them in the config file if not correct
 CERTUTIL = "/usr/bin/certutil"
-CUT = "/usr/bin/cut"
-GREP = "/usr/bin/grep"
-HEAD = "/usr/bin/head"
 KEYTOOL = JAVA_HOME + "/bin/keytool"
 MD5SUM = "/usr/bin/md5sum"
 OPENSSL = "/usr/bin/openssl"
-SED = "/usr/bin/sed"
 TRUST = "/usr/bin/trust"
 
 # Destination configuration
@@ -66,7 +62,7 @@ CABUNDLE = BUNDLEDIR + "/ca-bundle.crt"
 SMBUNDLE = BUNDLEDIR + "/email-ca-bundle.crt"
 CSBUNDLE = BUNDLEDIR + "/objsign-ca-bundle.crt"
 CERTDIR = SSLDIR + "/certs"
-KEYSTORE = PKIDIR + "/tls/java"
+KEYSTORE = PKIDIR + "/tls/java/cacerts"
 NSSDB = PKIDIR + "/nssdb"
 LOCALDIR = SSLDIR + "/local"
 OLDCERTDATA = SSLDIR + "/" + CERTDATA
@@ -100,6 +96,7 @@ if os.path.isfile(OLDCERTDATA):
     for line in lines:
       if line.find(oldsearch) != -1:
           oldrev = line.replace('# Revision:', '')
+          print("oldver = %s" % (oldrev))
           break
 else:
   oldrev = ''
@@ -123,6 +120,7 @@ with open(certdatalogfn, 'r') as newlog:
   for line in lines:
     if line.find(newsearch) != -1:
       newrev = re.sub("<br/>created <i>.*", '', line)
+      print("newrev = %s" % (newrev))
       break
 
 # If the match, just use the existing file
@@ -135,7 +133,7 @@ else:
   certdatabytes = certdatadl.read()
   certdatatext = certdatabytes.decode('utf-8')
   savefile = open(certdatafn, 'w')
-  savefile.write(certdatatext)
+  savefile.write("# Revision:" + newrev + "\n" + certdatatext)
   savefile.close()
   if oldrev != '':
     os.rename(OLDCERTDATA, OLDCERTDATA + ".old")
@@ -295,6 +293,7 @@ cert_distrust_types = {
   "CKA_NSS_EMAIL_DISTRUST_AFTER": "nss-email-distrust-after",
 }
 
+# Dump each CA Root to the anohor directory
 for tobj in objects:
     if tobj['CKA_CLASS'] == 'CKO_NSS_TRUST':
         #key = tobj['CKA_LABEL'] + printable_serial(tobj)
@@ -538,3 +537,34 @@ for tobj in objects:
         dt  = ', '.join(distrustbits)
         odt = ', '.join(openssl_distrustflags)
         print("Added to p11-kit anchor directory with the following trust bits:\n  Mozilla Trust:     %s\n  OpenSSL Trust:     %s\n  Mozilla Distrust:  %s\n  OpenSSL Distrust:  %s\n\n" % (t, ot, dt, odt))
+
+# Create OpenSSL trust store
+print("Extracting OpenSSL certificates to:\n%s..." % (CERTDIR), end='')
+create_OTS = [TRUST, "extract", "--filter=ca-anchors", "--format=openssl-directory", "--overwrite", "--comment", CERTDIR]
+subprocess.run(create_OTS, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print("Done!")
+
+# Create GNUTLS bundle file
+print("Extracting GNUTLS server auth certificates to:\n%s..." % (CABUNDLE), end='')
+create_GBF = [TRUST, "extract", "--filter=ca-anchors", "--format=pem-bundle", "--purpose", "server-auth", "--overwrite", "--comment", CABUNDLE]
+subprocess.run(create_GBF, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print("Done!")
+
+# Create GNUTLS S-Mime bundle
+print("Extracting GNUTLS S-Mime certificates to:\n%s..." % (SMBUNDLE), end='')
+create_GSM = [TRUST, "extract", "--filter=ca-anchors", "--format=pem-bundle", "--purpose", "email", "--overwrite", "--comment", SMBUNDLE]
+subprocess.run(create_GSM, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print("Done!")
+
+# Create GNUTLS Code Signing bundle
+print("Extracting GNUTLS code signing certificates to:\n%s..." % (CSBUNDLE), end='')
+create_GCS = [TRUST, "extract", "--filter=ca-anchors", "--format=pem-bundle", "--purpose", "code-signing", "--overwrite", "--comment", CSBUNDLE]
+subprocess.run(create_GCS, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print("Done!")
+
+# Create Java certificate store
+print("Extracting Java cacerts (JKS) to:\n%s..." % (KEYSTORE), end='')
+create_JKS = [TRUST, "extract", "--filter=ca-anchors", "--format=java-cacerts", "--purpose", "server-auth", "--overwrite", "--comment", KEYSTORE]
+subprocess.run(create_JKS, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print("Done!")
+
