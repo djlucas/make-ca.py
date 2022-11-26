@@ -1,8 +1,9 @@
 #!/usr/bin/python3
 # vim:set et sw=4:
 #
-# certdata2pem.py - splits certdata.txt into multiple files
+# make-ca.py - PKI managment script for LFS and others
 #
+# Copyright (C) 2022 DJ Lucas <dj@linuxfromscratch.org>
 # Copyright (C) 2009 Philipp Kern <pkern@debian.org>
 # Copyright (C) 2013 Kai Engert <kaie@redhat.com>
 #
@@ -24,15 +25,17 @@
 import base64
 import os
 import re
+import ssl
 import sys
 import tempfile
 import textwrap
+import time
 import urllib.request, urllib.parse, urllib.error
 import subprocess
 
 objects = []
 
-# Define default values
+# Get values from environment
 DESTDIR = os.getenv('DESTDIR')
 if DESTDIR is None:
   DESTDIR = ''
@@ -40,9 +43,7 @@ JAVA_HOME = os.getenv('JAVA_HOME')
 if JAVA_HOME is None:
   JAVA_HOME = "/usr"
 CERTDATA = "certdata.txt"
-TMPDIR = tempfile.mkdtemp()
-PKIDIR = DESTDIR + "/etc/pki"
-SSLDIR = DESTDIR + "/etc/ssl"
+
 # Do not depend on path, provide them in the config file if not correct
 CERTUTIL = "/usr/bin/certutil"
 CUT = "/usr/bin/cut"
@@ -53,6 +54,11 @@ MD5SUM = "/usr/bin/md5sum"
 OPENSSL = "/usr/bin/openssl"
 SED = "/usr/bin/sed"
 TRUST = "/usr/bin/trust"
+
+# Destination configuration
+CONFIGDIR = "/etc/make-ca"
+PKIDIR = DESTDIR + "/etc/pki"
+SSLDIR = DESTDIR + "/etc/ssl"
 ANCHORDIR = PKIDIR + "/anchors"
 ANCHORLIST = PKIDIR + "/anchors.md5sums"
 BUNDLEDIR = PKIDIR + "/tls/certs"
@@ -63,16 +69,21 @@ CERTDIR = SSLDIR + "/certs"
 KEYSTORE = PKIDIR + "/tls/java"
 NSSDB = PKIDIR + "/nssdb"
 LOCALDIR = SSLDIR + "/local"
-CURCERTDATA = "/etc/ssl/" + CERTDATA
+OLDCERTDATA = SSLDIR + "/" + CERTDATA
+MOZILLA_CA_ROOT = CONFIGDIR + "/mozilla-ca-root.pem"
+
+# Where/howto download the certdata.txt file
 SRCHOST = "hg.mozilla.org"
 SRCURL = "https://" + SRCHOST + "/releases/mozilla-release/raw-file/default/security/nss/lib/ckfw/builtins/certdata.txt"
 SRCDAT = SRCURL.replace("raw-file", "log")
 PROXY = ''
 
+# Create a temporary directory
+TMPDIR = tempfile.mkdtemp()
 print("Temp Directory is: %s" % (TMPDIR))
 
 # Open the configuration file to override the above, but for now just leave it.
-
+#####FIXME
 
 # Make sure destination directories exist
 os.makedirs(ANCHORDIR, mode = 0o755, exist_ok = True)
@@ -80,13 +91,64 @@ os.makedirs(BUNDLEDIR, mode = 0o755, exist_ok = True)
 os.makedirs(CERTDIR, mode = 0o755, exist_ok = True)
 os.makedirs(KEYSTORE, mode = 0o755, exist_ok = True)
 
+# Get hg revision of existing certdata.txt
+if os.path.isfile(OLDCERTDATA):
+  # Get the currnet revision
+  oldsearch = "# Revision:"
+  with open(OLDCERTDATA, 'r') as cdold:
+    lines = cdold.readlines()
+    for line in lines:
+      if line.find(oldsearch) != -1:
+          oldrev = line.replace('# Revision:', '')
+          break
+else:
+  oldrev = ''
+
+# Create default ssl context with MOZZILA_CA_ROOT as the only CA
+context = ssl.create_default_context()
+context.load_verify_locations(cafile=MOZILLA_CA_ROOT)
+
+# Get the revision directly from hg
+certdatalogdl = urllib.request.urlopen(SRCDAT, data=None, context=context)
+certdatalogfn = TMPDIR + "/certdata.txt.log"
+certdatalogbytes = certdatalogdl.read()
+certdatalogtext = certdatalogbytes.decode('utf-8')
+savelogfile = open(certdatalogfn, 'w')
+savelogfile.write(certdatalogtext)
+savelogfile.close()
+
+newsearch = "<br/>created <i>"
+with open(certdatalogfn, 'r') as newlog:
+  lines = newlog.readlines()
+  for line in lines:
+    if line.find(newsearch) != -1:
+      newrev = re.sub("<br/>created <i>.*", '', line)
+      break
+
+# If the match, just use the existing file
+if oldrev == newrev:
+  print("Existing file %s is up to date. Skipping download." % (OLDCERTDATA))
+else:
+  print("Downloading updated certdata.txt...")
+  certdatadl = urllib.request.urlopen(SRCURL, data=None, context=context)
+  certdatafn = TMPDIR + "/certdata.txt"
+  certdatabytes = certdatadl.read()
+  certdatatext = certdatabytes.decode('utf-8')
+  savefile = open(certdatafn, 'w')
+  savefile.write(certdatatext)
+  savefile.close()
+  if oldrev != '':
+    os.rename(OLDCERTDATA, OLDCERTDATA + ".old")
+  os.rename(TMPDIR + "/certdata.txt", OLDCERTDATA)
+
+
 def printable_serial(obj):
   return ".".join([str(x) for x in obj['CKA_SERIAL_NUMBER']])
 
 # Dirty file parser.
 in_data, in_multiline, in_obj = False, False, False
 field, ftype, value, binval, obj = None, None, None, bytearray(), dict()
-for line in open(CURCERTDATA, 'r'):
+for line in open(OLDCERTDATA, 'r'):
     # Ignore the file header.
     if not in_data:
         if line.startswith('BEGINDATA'):
@@ -324,7 +386,7 @@ for tobj in objects:
             fc.close();
             pk_fname = TMPDIR + "/" + "pubkey-" + fname
             fpkout = open(pk_fname, "w")
-            dump_pk_command = ["openssl", "x509", "-in", cert_fname, "-noout", "-pubkey"]
+            dump_pk_command = [OPENSSL, "x509", "-in", cert_fname, "-noout", "-pubkey"]
             subprocess.call(dump_pk_command, stdout=fpkout)
             fpkout.close()
             with open (pk_fname, "r") as myfile:
@@ -332,10 +394,10 @@ for tobj in objects:
             # obtain certificate information suitable as a comment
             comment_fname = TMPDIR + "/" + "comment-" + fname
             fcout = open(comment_fname, "w")
-            comment_command = ["openssl", "x509", "-in", cert_fname, "-noout", "-text"]
+            comment_command = [OPENSSL, "x509", "-in", cert_fname, "-noout", "-text"]
             subprocess.call(comment_command, stdout=fcout)
             fcout.close()
-            sed_command = ["sed", "--in-place", "s/^/#/", comment_fname]
+            sed_command = [SED, "--in-place", "s/^/#/", comment_fname]
             subprocess.call(sed_command)
             with open (comment_fname, "r", errors = 'replace') as myfile:
                 cert_comment=myfile.read()
@@ -465,7 +527,7 @@ for tobj in objects:
         os.remove(cert_fname)
         os.remove(comment_fname)
         os.remove(pk_fname)
-        fhash_command = ["openssl", "x509", "-in", fname, "-hash", "--nocert"]
+        fhash_command = [OPENSSL, "x509", "-in", fname, "-hash", "--nocert"]
         fhash = subprocess.run(fhash_command, stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
         nfname = ANCHORDIR + "/" + fhash
         nfname += ".p11-kit"
